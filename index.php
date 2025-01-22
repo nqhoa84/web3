@@ -1,7 +1,7 @@
 <?php
 // Get chat id https://api.telegram.org/bot7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU/getUpdates
 $apiToken = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"; // https://web.telegram.org/k/#@itdtestt_bot
-$chatId = "908847885";
+$chatId = "5696892272";
 // 2. Gọi API bonds để lấy dữ liệu JSON
 $apiUrl = "https://realtime-api.ape.bond/bonds";
 $jsonData = file_get_contents($apiUrl);
@@ -58,4 +58,40 @@ $response = curl_exec($ch);
 curl_close($ch);
 
 echo "Phản hồi từ Telegram: $response";
+
+
+//// MySQL connection details
+//$host = "localhost";         // Host (e.g., localhost)
+//$username = "admin";         // MySQL username
+//$password = "admin";         // MySQL password
+//$database = "infura_io";     // Database name
+//$port = 3306;
+//
+//// Establish the connection
+//$conn = new mysqli($host, $username, $password, $database);
+//
+//// Check the connection
+//if ($conn->connect_error) {
+//    die("Connection failed: " . $conn->connect_error);
+//}
+//echo "Connection successful!";
+//
+//// Example query: Show tables
+//$sql = "SHOW TABLES";
+//$result = $conn->query($sql);
+//
+//// Check if there are tables and print them
+//if ($result->num_rows > 0) {
+//    echo "Tables in the database:";
+//    while ($row = $result->fetch_array()) {
+//        echo $row[0] . "<br>";
+//    }
+//} else {
+//    echo "No tables found in the database.";
+//}
+//
+//// Close the connection
+//$conn->close();
+
 ?>
+
