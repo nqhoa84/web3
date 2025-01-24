@@ -3,7 +3,7 @@ CREATE DATABASE IF NOT EXISTS infura_io;
 
 USE infura_io;
 
-CREATE TABLE IF NOT EXISTS Bonds (
+CREATE TABLE IF NOT EXISTS bond_history (
     id INT AUTO_INCREAMENT PRIMARY KEY,
     bond_name VARCHAR(255) NOT NULL,
     contract_address VARCHAR(255) NOT NULL,
