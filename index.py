@@ -1,6 +1,7 @@
 import requests
 import time
 import mysql.connector
+from datetime import datetime
 
 # Data config setting
 data_config = {
@@ -35,6 +36,21 @@ bonds = data["bonds"]
 sorted_bonds = sorted(bonds, key=lambda bond: bond["bonus"], reverse=True)
 top_10_bonds = sorted_bonds[:10]
 
+
+# Bedtime setting
+bedtime_start = "17:26"
+bedtime_end = "08:00"
+
+# Set Bedtime for sending message
+def set_bedtime():
+    now = datetime.now().time()
+    start = datetime.strptime(bedtime_start, "%H:%M").time()
+    end = datetime.strptime(bedtime_end, "%H:%M").time()
+
+    if start <= now or now  < end:
+        return True
+    return False
+
 # Schedule send message to Telegram
 def schedule_send_message():
     # Build the message
@@ -51,7 +67,7 @@ def schedule_send_message():
 
         # Insert data to database
         insert_query = """
-            INSERT INTO Bonds (bond_name, contract_address, date_time, bonus, min_price, max_price, max_buy)
+            INSERT INTO bond_history (bond_name, contract_address, date_time, bonus, min_price, max_price, max_buy)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         data = (bond_name, contract_address, date_time, bonus, min_price.replace(",",""), max_price.replace(",",""), max_buy.replace(",",""))
@@ -92,5 +108,10 @@ def schedule_send_message():
 
 if __name__ == "__main__":
     while True:
+        if set_bedtime():
+            print("It's bedtime. The message will soon be sent in the morning.")
+            time.sleep(600)
+            continue 
+
         schedule_send_message()
         time.sleep(600)
