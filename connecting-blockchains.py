@@ -4,7 +4,7 @@ import json
 import time
 
 API_KEY_INFURA = "13ceaec149fe450c8b71b4e377aa2b83"
-SMART_CONTRACT_ADDRESS = "0xc2132d05d31c914a87c6611c10748aeb04b58e8f"
+SMART_CONTRACT_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 API_KEY_TOKEN_ETHERSCAN = "9BZMQYAZVSVKVURIA3SPKDZEYS2DQ4NARU"
 
 contract_address_checksum = Web3.to_checksum_address(SMART_CONTRACT_ADDRESS)
@@ -19,31 +19,33 @@ if web3.is_connected():
 else:
     print("Not connected to Ethereum network")  
 
-# Connect to Smart contract
-etherscan_url = "https://api.etherscan.io/api"
-params = {
-    "module": "contract",
-    "action": "getabi",
-    "address": contract_address_checksum,
-    "apikey": API_KEY_TOKEN_ETHERSCAN
-}
 
-# Get ABI result for Smart contract
-response = requests.get(etherscan_url, params=params)
+# Get ABI from Etherscan
+def get_abi(contract_address):
+    etherscan_url = "https://api.etherscan.io/api"
+    params = {
+        "module": "contract",
+        "action": "getabi",
+        "address": contract_address,
+        "apikey": API_KEY_TOKEN_ETHERSCAN
+    }
 
-if response.status_code == 200:
-    abi_json = response.json()
-    if abi_json["status"] == "1":
-        abi = json.loads(abi_json["result"])
-    else:
-        print(f"Error retrieving contract ABI: {abi_json['result']}")
-        exit()
-else:
-    print(f"Error retrieving contract ABI: {response.status_code}")
-    exit()
+    response = requests.get(etherscan_url, params=params)
+
+    if response.status_code == 200:
+        abi_json = response.json()
+        if abi_json["status"] == "1" and abi_json["result"] != "Contract source code not verified":
+            abi = json.loads(abi_json["result"])
+            return abi
+        else:
+            print(f"Error retrieving contract ABI: {abi_json['result']}")
+            return None
+    else:       
+        print(f"Error retrieving contract ABI: {response.status_code}")
+        return None
 
 # Create contract instance
-contract = web3.eth.contract(address=contract_address_checksum, abi = abi)
+contract = web3.eth.contract(address=contract_address_checksum, abi = get_abi(contract_address_checksum))
 
 # Check if ABI contains Transfer event 
 def has_transfer_event(abi):
@@ -52,14 +54,14 @@ def has_transfer_event(abi):
             return True
     return False
 
-if has_transfer_event(abi):
+if has_transfer_event(contract.abi):
 
     # Fetch transfer events in the last block
-    logs = contract.events.Transfer().get_logs(from_block= web3.eth.block_number - 9999999, to_block='latest')
-
-    limited_logs = logs[:10]
+    logs = contract.events.Transfer().get_logs(from_block= web3.eth.block_number - 10000, to_block='latest')
+    sorted_logs = sorted(logs, key=lambda log: log['blockNumber'], reverse=True)
+    limited_logs = sorted_logs[:10]
     for log in limited_logs:
-        print(f"Transfer of {web3.from_wei(log.args._amount, 'ether')} WETH from {log.args._from} to {log.args._to}")
+        print(f"Transfer of {web3.from_wei(log['args']['value'], 'ether')} WETH from {log['args']['from']} to {log['args']['to']}")
 else:
     print("The ABI does not contain the Transfer event.")
 
