@@ -64,29 +64,6 @@ def get_abi(contract_address):
         print(f"Error retrieving contract ABI: {response.status_code}")
         return None
 
-# Check if the ABI contains the Transfer event
-def has_transfer_event(abi):
-    for entry in abi:
-        if entry.get("type") == "event" and entry.get("name") == "Transfer":
-            return True
-    return False
-
-# Check if the ABI contains the Approval event
-def has_approval_event(abi):
-    for entry in abi:
-        if entry.get("type") == "event" and entry.get("name") == "Approval":
-            return True
-    return False
-
-# Fetch Transfer events from the contract
-def fetch_transfer_events(contract, from_block, to_block):
-    logs = contract.events.Transfer().get_logs(from_block=from_block, to_block=to_block)
-    return logs
-
-def fetch_approval_event(contract, from_block, to_block):
-    logs = contract.events.Approval().get_logs(from_block=from_block, to_block=to_block)
-    return logs
-
 # Connect to database
 connection = mysql.connector.connect(**data_config)
 cursor = connection.cursor()
@@ -127,6 +104,18 @@ def set_bedtime():
         return True
     return False
 
+# Check if the ABI contains the event
+def has_event(abi, event_name):
+    for entry in abi:
+        if entry.get("type") == "event" and entry.get("name") == event_name:
+            return True
+    return False
+
+# Fetch Event logs from the contract
+def fetch_event_logs(contract, from_block, to_block, event_name):
+    logs = getattr(contract.events, event_name).get_logs(from_block=from_block, to_block=to_block)
+    return logs
+
 # Get latest transaction block
 def get_latest_tx_block(contract_address):
     try:
@@ -147,14 +136,15 @@ def get_latest_tx_block(contract_address):
         if txs:
             return int(txs[0]["blockNumber"])
     except Exception as e:
-        print(f"Lỗi khi lấy block giao dịch gần nhất: {e}")
+        print(f"Error while get latest transactions: {e}")
 
     return None 
-
+        
 # Process and check Approval event
 def approval_event_user_token(top_10_bonds):
     for bond in top_10_bonds:
         token_user = bond['billAddress']
+        event_name = "Approval"
         print(f"Checking Approval events for principal token {token_user}")
 
         token_user_abi = get_abi(token_user)
@@ -164,7 +154,7 @@ def approval_event_user_token(top_10_bonds):
             print(f"Skipping {token_user_abi} because its ABI could not be retrieved.")
             continue
         # Check Approval event exists in abi
-        if not has_approval_event(token_user_abi):
+        if not has_event(token_user_abi, event_name=event_name):
             print(f"No Approval event found for {token_user} Skipping.")
             continue
         
@@ -176,7 +166,7 @@ def approval_event_user_token(top_10_bonds):
         to_block = "latest"
 
         # Fetch the Transfer events from the contract
-        approval_logs = fetch_transfer_events(token_user_contract, from_block, to_block)
+        approval_logs = fetch_event_logs(token_user_contract, from_block, to_block, event_name=event_name)
         sorted_approval_logs = sorted(approval_logs, key=lambda log: log['blockNumber'], reverse=True)
         limited_approval_logs = sorted_approval_logs[:10]
 
@@ -197,7 +187,8 @@ def approval_event_user_token(top_10_bonds):
 # Process and check transfer event
 def transfer_event_user_token(top_10_bonds):
     for bond in top_10_bonds:
-        user_token = bond['billAddress']
+        user_token = bond['principalToken']
+        event_name = "Transfer"
         print(f"Checking Transfer events for principal token: {user_token}")
         
         token_abi = get_abi(user_token)
@@ -206,7 +197,7 @@ def transfer_event_user_token(top_10_bonds):
             print(f"Skipping {user_token} because its ABI could not be retrieved.")
             continue
         
-        if not has_transfer_event(token_abi):
+        if not has_event(token_abi, event_name=event_name):
             print(f"No Transfer event found for {user_token} Skipping.")
             continue
         
@@ -217,11 +208,11 @@ def transfer_event_user_token(top_10_bonds):
         to_block = "latest"
         
         # Fetch the Transfer events from the contract
-        transfer_logs = fetch_transfer_events(token_contract, from_block, to_block)
+        transfer_logs = fetch_event_logs(token_contract, from_block, to_block, event_name=event_name)
         sorted_transfer_logs = sorted(transfer_logs, key=lambda log: log['blockNumber'], reverse=True)
         limited_transfer_logs = sorted_transfer_logs[:10]
 
-        for log in sorted_transfer_logs:
+        for log in limited_transfer_logs:
             args = log.get("args", {})
 
             amount = args.get("_value") or args.get("value") or args.get("wad")
