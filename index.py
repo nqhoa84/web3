@@ -64,6 +64,18 @@ def get_abi(contract_address):
         print(f"Error retrieving contract ABI: {response.status_code}")
         return None
 
+# Check if the ABI contains the event
+def has_event(abi, event_name):
+    for entry in abi:
+        if entry.get("type") == "event" and entry.get("name") == event_name:
+            return True
+    return False
+
+# Fetch Event logs from the contract
+def fetch_event_logs(contract, from_block, to_block, event_name):
+    logs = getattr(contract.events, event_name).get_logs(from_block=from_block, to_block=to_block)
+    return logs
+
 # Connect to database
 connection = mysql.connector.connect(**data_config)
 cursor = connection.cursor()
@@ -104,18 +116,6 @@ def set_bedtime():
         return True
     return False
 
-# Check if the ABI contains the event
-def has_event(abi, event_name):
-    for entry in abi:
-        if entry.get("type") == "event" and entry.get("name") == event_name:
-            return True
-    return False
-
-# Fetch Event logs from the contract
-def fetch_event_logs(contract, from_block, to_block, event_name):
-    logs = getattr(contract.events, event_name).get_logs(from_block=from_block, to_block=to_block)
-    return logs
-
 # Get latest transaction block
 def get_latest_tx_block(contract_address):
     try:
@@ -139,7 +139,144 @@ def get_latest_tx_block(contract_address):
         print(f"Error while get latest transactions: {e}")
 
     return None 
-        
+
+def track_bond_bill_event_contract(top_10_bonds):
+
+        # Save data of BillCreated Events
+        bill_created_data = {}
+
+        for bond in top_10_bonds:
+
+            # Event name
+            billCreated_name = "BillCreated"
+            billClaimed_name = "BillClaimed"
+
+            # Get Contract ABI 
+            contract_address = bond["billAddress"]
+            bond_name = bond["principalTokenName"] +"-"+ bond["payoutTokenName"]
+            payout_token_name = bond["payoutTokenName"]
+            user_token_name = bond["principalTokenName"]
+
+            contract_abi = get_abi(contract_address)
+
+            print(f"🔍 Checking BillCreated and BillClaimed events for Bond contract {contract_address}: {bond_name}")
+
+            # Check exist ABI and event
+            if contract_abi is None:
+                print(f"⚠️ Skipping {contract_address} because its ABI could not be retrieved.")
+                continue
+            if not has_event(contract_abi, event_name=billCreated_name) or not has_event(contract_abi, event_name=billClaimed_name): 
+                print(f"⚠️ No BillCreated or BillClaimed event found for {contract_address} Skipping.")
+                continue
+            
+            # Create contract instance
+            contract = web3.eth.contract(address=Web3.to_checksum_address(contract_address), abi=contract_abi)
+
+            latest_block = get_latest_tx_block(contract_address)
+            print(latest_block)
+            from_block = 0
+            to_block = "latest"
+
+            # Fetch the BillCreated events from the contract
+            billCreated_logs = fetch_event_logs(contract, from_block, to_block, event_name=billCreated_name)
+            sorted_billCreated_logs = sorted(billCreated_logs, key=lambda log: log['blockNumber'], reverse=True)
+            limited_billCreated_logs = sorted_billCreated_logs[:10]
+            for log in sorted_billCreated_logs:
+                args = log.get("args", {})
+
+                billId = args.get("billId")
+                deposit = Web3.from_wei(args.get("deposit"), "ether")
+                payout = Web3.from_wei(args.get("payout"), "ether")
+                expires = args.get("expires")
+                vesting_until_time = datetime.utcfromtimestamp(expires)
+
+                if billId is not None:
+                    bill_created_data[args.get("billId")] = {
+                        "deposit": deposit,
+                        "payout": payout,
+                        "expires": vesting_until_time
+                    }
+
+            # Fetch the BillClaimed events from the contract
+            billClaimed_logs = fetch_event_logs(contract, from_block, to_block, event_name=billClaimed_name)
+            sorted_billClaimed_logs = sorted(billClaimed_logs, key=lambda log: log['blockNumber'], reverse=True)
+            limited_billClaimed_logs = sorted_billClaimed_logs[:10]
+            found_bill = False
+            for log in sorted_billClaimed_logs:
+                args = log.get("args", {})
+                
+                billId = args.get("billId")
+                recipient = args.get("recipient")
+                remaining = Web3.from_wei(args.get("remaining"), "ether")
+                payout = Web3.from_wei(args.get("payout"), "ether")
+
+                if billId in bill_created_data and billId is not None:
+                    found_bill = True
+
+                    bill_info = bill_created_data[billId]
+
+                    print(f"🔥 Bond Purchased & Claimed! 🔥")
+                    print(f"🆔 Bond ID: {billId}") # Unique Bond Id  was purchased
+                    print(f"👤 Buyer: {recipient}") # Ethereum address of the buyer who purchased and later claimed the bond
+                    print(f"💰 Deposit: {bill_info['deposit']} {user_token_name}") # This is the amount of USDC to (or other token) used to buy bond 
+                    print(f"🎁 Payout BillCreated: {bill_info['payout']} {payout_token_name}") # The total payout amount for the bond (wei or eth)
+                    print(f"🎁 Payout BillClaimed: {payout} {payout_token_name}") # The actual amount of the payout claimed at the time (may be lower than the original payout from BillCreated if there are vesting rules or partial claims))
+                    print(f"⏳ Vesting Until: {bill_info['expires']}") # The timestamp when the bond's vesting ends
+                    print(f"✅ Bond Claimed! Remaining: {remaining} {payout_token_name}") # The remaining amount that has yet to be claimed (or the remaining payout if partial claims are allowed).
+                    print(f"\n")
+
+            if not found_bill:
+                print(f"⚠️ Not found BillClaim info for any Bill ID in contract {contract_address}")   
+
+# Fetch the UpdateClaimApproval from the contract
+def approval_event_contract(top_10_bonds):
+    for bond in top_10_bonds:
+        contract_address = bond["billAddress"]
+        event_name = "UpdateClaimApproval"
+
+        abi = get_abi(contract_address)
+
+        if abi is None:
+            print(f"⚠️ Skipping {contract_address} because its ABI could not be retrieved.")
+            continue
+
+        # Check if "UpdateClaimApproval" event exists in ABI
+        if not has_event(abi, event_name=event_name):
+            print(f"⚠️ No UpdateClaimApproval event found in contract {contract_address}. Skipping.")
+            continue
+
+        # Contract initialization
+        contract = web3.eth.contract(address=Web3.to_checksum_address(contract_address), abi=abi)
+
+        latest_block = web3.eth.block_number
+        from_block = 0
+        to_block = "latest"
+
+        print(f"🔍 Checking UpdateClaimApproval events from block {from_block} to {to_block}...")
+
+        try:
+            # Verify event existence in contract before calling it
+            if hasattr(contract.events, event_name):
+                approval_event = contract.events.UpdateClaimApproval()
+                approval_logs = approval_event.get_logs(from_block=from_block, to_block=to_block)
+
+                if not approval_logs:
+                    print("✅ No approval events found in the given range.")
+                    continue
+
+                for log in approval_logs:
+                    args = log.get("args", {})
+
+                    owner = args.get("owner")
+                    approved_account = args.get("approvedAccount")
+                    approved = args.get("approved")
+
+                    print(f"✅ Owner: {owner}, Approved Account: {approved_account}, Approved: {approved}")
+            else:
+                print(f"⚠️ The contract does not have an UpdateClaimApproval event.")
+        except Exception as e:
+            print(f"❌ Error fetching approval events: {e}")
+
 # Process and check Approval event
 def approval_event_user_token(top_10_bonds):
     for bond in top_10_bonds:
@@ -212,7 +349,7 @@ def transfer_event_user_token(top_10_bonds):
         sorted_transfer_logs = sorted(transfer_logs, key=lambda log: log['blockNumber'], reverse=True)
         limited_transfer_logs = sorted_transfer_logs[:10]
 
-        for log in limited_transfer_logs:
+        for log in sorted_transfer_logs:
             args = log.get("args", {})
 
             amount = args.get("_value") or args.get("value") or args.get("wad")
@@ -292,11 +429,17 @@ if __name__ == "__main__":
             time.sleep(600)
             continue 
         
-        print(" *** Show Transfer *** ")
-        transfer_event_user_token(top_10_bonds)
+        # print(" *** Show Transfer *** ")
+        # transfer_event_user_token(top_10_bonds)
             
-        print(" *** Show Approval *** ")
-        approval_event_user_token(top_10_bonds)
+        # print(" *** Show Approval *** ")
+        # approval_event_user_token(top_10_bonds)
 
+        print(" *** Monitor User bought Bond *** ")
+        track_bond_bill_event_contract(top_10_bonds)
+
+        print("*** UpdateClaimApproval event")
+        approval_event_contract(top_10_bonds)
+        
         schedule_send_message()
         time.sleep(600)
