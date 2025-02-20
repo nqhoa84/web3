@@ -37,7 +37,7 @@ sorted_bonds = sorted(bonds, key=lambda bond: bond["bonus"] if bond["bonus"] is 
 top_10_bonds = sorted_bonds[:10]
 
 # Bedtime setting
-bedtime_start = "18:00"
+bedtime_start = "23:30"
 bedtime_end = "07:00"
 
 # Set Bedtime for sending message
@@ -113,9 +113,8 @@ def schedule_send_message():
 if __name__ == "__main__":
     while True:
         if set_bedtime():
-            print("It's bedtime. The message will soon be sent in the morning.")
-            time.sleep(300)
+            time.sleep(900)
             continue 
 
         schedule_send_message()
-        time.sleep(300)
+        time.sleep(900)
