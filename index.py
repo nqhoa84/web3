@@ -17,7 +17,7 @@ cursor = connection.cursor()
 
 # Telegram Bot API token and chat ID
 api_token = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"
-chat_id = "5696892272"
+chat_id = "371163595"
 
 # API URL for bonds
 api_url = "https://realtime-api.ape.bond/bonds"
@@ -64,9 +64,7 @@ def get_chain_name(chain_id):
 
 # Schedule send message to Telegram
 def schedule_send_message():
-    # Build the message
-    text_message = "🚀 **Danh sách 10 bond có % bonus cao nhất** 🚀\n\n"
-    text_message += "*Thông tin các bond:* \n"
+    text_message = ""
     for index, bond in enumerate(top_10_bonds, start=1):
         chain_id = bond['chainId']
         bond_name = bond['payoutTokenName']
@@ -85,9 +83,9 @@ def schedule_send_message():
         data = (bond_name, contract_address, date_time, bonus, min_price.replace(",",""), max_price.replace(",",""), max_buy.replace(",",""))
         cursor.execute(insert_query, data)
 
-        text_message += f"Bond #{index}:\n"
-        text_message += f"➡️ {get_chain_name(chain_id)} {bond_name} {bonus}%\n" 
-        text_message += "─" * 40 + "\n"
+        chain_name = get_chain_name(chain_id)
+
+        text_message += f"- {chain_name[:3]} {bond_name} {bonus}%\n" 
 
     # Send the message to Telegram
     telegram_url = f"https://api.telegram.org/bot{api_token}/sendMessage"
@@ -116,8 +114,8 @@ if __name__ == "__main__":
     while True:
         if set_bedtime():
             print("It's bedtime. The message will soon be sent in the morning.")
-            time.sleep(600)
+            time.sleep(300)
             continue 
 
         schedule_send_message()
-        time.sleep(600)
+        time.sleep(300)
