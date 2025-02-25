@@ -22,6 +22,32 @@ API_KEYS = {
     'LIN': '15V5YKYIH6RCKW6YNT5NG12FZ7FS8CDVS3',
 }
 
+CURRENCY_MAP = {
+    'ETH': 'ETH',
+    'BSC': 'BNB',
+    'POL': 'POL',
+    'ARB': 'ARB',
+    'BAS': 'ETH',
+    'LIN': 'ETH'
+}
+
+def get_latest_block(chain):
+    url = API_URLS[chain]
+    params = {
+        'module': 'proxy',
+        'action': 'eth_blockNumber',
+        'apikey': API_KEYS[chain]
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if 'result' in data:
+        return int(data['result'], 16)
+    else:
+        print(f"Cannot get latest block: {data}")
+        return None
+
 # Get transaction follow action of api url
 def get_transactions(chain, module, action, wallet_address, from_block, to_block):
     url = API_URLS[chain]
@@ -44,8 +70,29 @@ def get_transactions(chain, module, action, wallet_address, from_block, to_block
             if tx.get('blockNumber') and from_block <= int(tx.get('blockNumber')) <= to_block
         ]
     else:
-        print(f"API lỗi hoặc không có giao dịch: {data}")
+        print(f"API error or no transaction: {data}")
         return []
+
+def is_valid_block_range(chain, from_block, to_block):
+    latest_block = get_latest_block(chain)
+    
+    if latest_block is None:
+        print("Cannot get lastest block. Error API or network.")
+        return False
+
+    if from_block < 0 or to_block < 0:
+        print("from_block and to_block have to >= 0.")
+        return False
+
+    if from_block > to_block:
+        print("from_block cannot be greater than to_block.")
+        return False
+
+    if to_block > latest_block:
+        print(f"to_block ({to_block}) cannot greater than latest_block ({latest_block}).")
+        return False
+
+    return True
 
 # Process transactions and tokens retrieved 
 def parse_transactions(wallet_address, chain, from_block, to_block):
@@ -129,7 +176,46 @@ def parse_transactions(wallet_address, chain, from_block, to_block):
 
     return transactions.values()
 
+# Export data to csv
+def export_data_to_csv(transactions, wallet_address, chain, from_block, to_block):
+    fileName = f"{wallet_address}_{chain}_{from_block}_{to_block}.csv"
+
+    # Number of tokens existing in a transaction
+    if transactions:
+        max_tokens = max((len(tx['tokens']) for tx in transactions), default=0)
+    else:
+        max_tokens = 0
+
+    # Write csv file with transactions data
+    with open(fileName, mode='w', newline='') as file:
+        writer = csv.writer(file)
+
+        header = ["block", "txhash", "wallet", "tx fee", "native value", "direct", "internal value", "internal direct"]
+        for i in range(1, max_tokens + 1):
+            header.extend([f"token{i}", f"contract address{i}", f"value{i}", f"direct{i}"])
+        
+        writer.writerow(header)
+    
+        for tx in transactions:
+            row = [
+                tx['block'], tx['txhash'], tx['wallet'], tx['tx_fee'], tx['native_value'], tx['direct'], 
+                tx['internal_value'], tx['internal_direct']
+            ]
+            for token in tx['tokens']:
+                row.extend([token[0], token[1], token[2], token[3]])
+
+            while len(row) < len(header):
+                row.append("")
+
+            writer.writerow(row)
+
+        print(f"CSV export: {fileName}")
+
 if __name__ == "__main__":
     wallet_address, chain, from_block, to_block = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+    if not is_valid_block_range(chain, from_block, to_block):
+        print("Block range is invalid. Stop program!!!")
+        sys.exit(1)
+
     wallet_transactions = parse_transactions(wallet_address, chain, from_block, to_block)
-    print(wallet_transactions)
+    export_data_to_csv(wallet_transactions, wallet_address, chain, from_block, to_block)
