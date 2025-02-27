@@ -31,6 +31,7 @@ CURRENCY_MAP = {
     'LIN': 'ETH'
 }
 
+# Get latest block from chain type
 def get_latest_block(chain):
     url = API_URLS[chain]
     params = {
@@ -70,9 +71,9 @@ def get_transactions(chain, module, action, wallet_address, from_block, to_block
             if tx.get('blockNumber') and from_block <= int(tx.get('blockNumber')) <= to_block
         ]
     else:
-        print(f"API error or no transaction: {data}")
         return []
 
+# Check block range
 def is_valid_block_range(chain, from_block, to_block):
     latest_block = get_latest_block(chain)
     
@@ -99,8 +100,16 @@ def parse_transactions(wallet_address, chain, from_block, to_block):
 
     # Get normal transaction, internal transaction, ERC-20 token
     normal_txs = get_transactions(chain, 'account', 'txlist', wallet_address, from_block, to_block)
+    if not normal_txs:
+        print("No Normal transactions found!")
+
     internal_txs = get_transactions(chain, 'account', 'txlistinternal', wallet_address, from_block, to_block)
+    if not internal_txs:
+        print("No Internal transactions found!")
+
     erc20_token_txs = get_transactions(chain, 'account', 'tokentx', wallet_address, from_block, to_block)
+    if not erc20_token_txs:
+        print("No ERC-20 token transactions found!")
 
     # Initialize transaction object
     transactions = {}
@@ -155,24 +164,41 @@ def parse_transactions(wallet_address, chain, from_block, to_block):
         token_address = tx['contractAddress']
         token_direct = 'IN' if tx['to'].lower() == wallet_address.lower() else 'OUT'
 
-        if txhash not in transactions:
-            continue
-
-        # Check if tokens are duplicated and add up the value
-        token_found = False
-        for token_info in transactions[txhash]['tokens']:
-            if token_info[0] == token_symbol and token_info[1] == token_address and token_info[3] == token_direct:
-                token_info[2] += value
-                token_found = True
-                break
-        
-        if not token_found:
-            transactions[txhash]['tokens'].append([
-                token_symbol,
-                token_address,
-                value,
-                token_direct
-            ])
+        if txhash in transactions:
+            # Check if tokens are duplicated and add up the value
+            token_found = False
+            for token_info in transactions[txhash]['tokens']:
+                if token_info[0] == token_symbol and token_info[1] == token_address and token_info[3] == token_direct:
+                    token_info[2] += value
+                    token_found = True
+                    break
+            
+            if not token_found:
+                transactions[txhash]['tokens'].append([
+                    token_symbol,
+                    token_address,
+                    value,
+                    token_direct
+                ])
+        else:
+            transactions[txhash] = {
+                'block': tx['blockNumber'],
+                'txhash': txhash,
+                'wallet': wallet_address,
+                'tx_fee': 0,
+                'native_value': 0,
+                'direct': '',
+                'internal_value': 0,
+                'internal_direct': '',
+                'tokens': [
+                    [
+                        token_symbol,
+                        token_address,
+                        value,
+                        token_direct
+                    ]
+                ]
+            }
 
     return transactions.values()
 
@@ -187,7 +213,7 @@ def export_data_to_csv(transactions, wallet_address, chain, from_block, to_block
         max_tokens = 0
 
     # Write csv file with transactions data
-    with open(fileName, mode='w', newline='') as file:
+    with open(fileName, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
 
         header = ["block", "txhash", "wallet", "tx fee", "native value", "direct", "internal value", "internal direct"]
@@ -212,7 +238,12 @@ def export_data_to_csv(transactions, wallet_address, chain, from_block, to_block
         print(f"CSV export: {fileName}")
 
 if __name__ == "__main__":
+    if len(sys.argv) < 5:
+        print("Usage: python script.py <wallet_address> <chain> <from_block> <to_block>")
+        sys.exit(1)
+
     wallet_address, chain, from_block, to_block = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+
     if not is_valid_block_range(chain, from_block, to_block):
         print("Block range is invalid. Stop program!!!")
         sys.exit(1)
