@@ -10,18 +10,28 @@ RETRY_DELAY = 60
 error_count = 0
 
 # Data config setting
+# data_config = {
+#     "host": "itdragons.com",      
+#     "user": "apebond",               
+#     "password": "it.d@2025",
+#     "database": "apebond",
+#     "port": 3307,
+#     "ssl_disabled": True
+# }
+
 data_config = {
-    "host": "itdragons.com",      
-    "user": "apebond",               
-    "password": "it.d@2025",
+    "host": "localhost",          
+    "user": "admin",               
+    "password": "admin",  
     "database": "apebond",
-    "port": 3307,
-    "ssl_disabled": True
 }
 
 # Telegram Bot API token and chat ID
-api_token = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"
-chat_id = "-1002343293739"
+# api_token = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"
+# chat_id = "-1002343293739"
+
+api_token = "7836597875:AAEbZKTq5OLWoKqRljx4WQXSYY7yMRb5wu4"
+chat_id = "5696892272"
 
 # API URL for bonds
 api_url = "https://realtime-api.ape.bond/bonds"
@@ -76,9 +86,64 @@ def get_chain_name(chain_id):
         pass
     return "Unknown Chain"
 
+# Create database and table if not exist
+def create_database_and_table():
+    temp_config = data_config.copy()
+    temp_config.pop("database")
+
+    try:
+        connection = mysql.connector.connect(**temp_config)
+        cursor = connection.cursor()
+
+        cursor.execute("SHOW DATABASES")
+        databases = [db[0] for db in cursor.fetchall()]
+
+        if data_config['database'] in databases:
+            print(f"Database {data_config['database']} already exists.")
+        else:
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {data_config['database']}")
+            print(f"Database {data_config['database']} newly created")
+
+        connection.database = data_config['database']
+
+        cursor.execute("SHOW TABLES")
+        tables = [table[0] for table in cursor.fetchall()]
+
+        if "bond_history" in tables:
+            print("Table bond_history already exists.")
+        else:
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS bond_history(
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        bond_name VARCHAR(255) NOT NULL,
+                        contract_address VARCHAR(255) NOT NULL,
+                        date_time DATETIME NOT NULL,
+                        bonus DECIMAL(10, 2) NOT NULL,
+                        min_price DECIMAL(18, 2) NOT NULL,
+                        max_price DECIMAL(18, 2) NOT NULL,
+                        max_buy DECIMAL(18, 2) NOT NULL
+                ) ENGINE=InnoDB;
+            """
+            cursor.execute(create_table_query)
+            print("Table bond_history newly created")
+
+        connection.commit()
+
+    except mysql.connector.Error as e:
+        print(f"Error creating database/table: {e}")
+    
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals():
+            connection.close()
+
 # Get data from API and process function
 def process_bonds():
     try:
+        # Create database and table if not exist
+        create_database_and_table()
+
         # Connect to database
         connection = mysql.connector.connect(**data_config)
         cursor = connection.cursor()

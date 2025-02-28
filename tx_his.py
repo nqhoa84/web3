@@ -1,6 +1,7 @@
 import requests
 import csv
 import sys
+import blacklist_tokens
 
 # Api urls of blockchains
 API_URLS = {
@@ -65,7 +66,7 @@ def get_transactions(chain, module, action, wallet_address, from_block, to_block
     data = response.json()
 
     # Filter data by range of blocknumber
-    if data['status'] == '1' and isinstance(data['result'], list):
+    if data.get('status') == '1' and isinstance(data.get('result'), list):
         return [
             tx for tx in data['result']
             if tx.get('blockNumber') and from_block <= int(tx.get('blockNumber')) <= to_block
@@ -159,10 +160,14 @@ def parse_transactions(wallet_address, chain, from_block, to_block):
     # Add ERC-20 tokens value
     for tx in erc20_token_txs:
         txhash = tx['hash']
-        value = float(tx['value']) / (10 ** int(tx['tokenDecimal']))
+        decimals = int(tx.get('tokenDecimal', 18))
+        value = float(tx['value']) / (10 ** decimals) if decimals > 0 else 0
         token_symbol = tx['tokenSymbol']
         token_address = tx['contractAddress']
         token_direct = 'IN' if tx['to'].lower() == wallet_address.lower() else 'OUT'
+
+        if token_address.lower() in map(str.lower, blacklist_tokens.blacklist_tokens):
+            continue
 
         if txhash in transactions:
             # Check if tokens are duplicated and add up the value
@@ -244,6 +249,10 @@ if __name__ == "__main__":
 
     wallet_address, chain, from_block, to_block = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 
+    if chain not in API_URLS:
+        print(f"Invalid chain: {chain}. Only support chains: {', '.join(API_URLS.keys())}")
+        sys.exit(1)
+    
     if not is_valid_block_range(chain, from_block, to_block):
         print("Block range is invalid. Stop program!!!")
         sys.exit(1)
