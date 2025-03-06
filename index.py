@@ -10,28 +10,18 @@ RETRY_DELAY = 60
 error_count = 0
 
 # Data config setting
-# data_config = {
-#     "host": "itdragons.com",      
-#     "user": "apebond",               
-#     "password": "it.d@2025",
-#     "database": "apebond",
-#     "port": 3307,
-#     "ssl_disabled": True
-# }
-
 data_config = {
-    "host": "localhost",          
-    "user": "admin",               
-    "password": "admin",  
+    "host": "itdragons.com",      
+    "user": "apebond",               
+    "password": "it.d@2025",
     "database": "apebond",
+    "port": 3307,
+    "ssl_disabled": True
 }
 
 # Telegram Bot API token and chat ID
-# api_token = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"
-# chat_id = "-1002343293739"
-
-api_token = "7836597875:AAEbZKTq5OLWoKqRljx4WQXSYY7yMRb5wu4"
-chat_id = "5696892272"
+api_token = "7541502749:AAHO0ro39ZhMhS8gHFNy9DeKcaE5Ux7CUyU"
+chat_id = "-1002343293739"
 
 # API URL for bonds
 api_url = "https://realtime-api.ape.bond/bonds"
@@ -158,25 +148,34 @@ def process_bonds():
             raise Exception("❌ API don't have bonds data")
 
         # Process list bonds by % bonus
-        bonds = data["bonds"]
-        sorted_bonds = sorted(bonds, key=lambda bond: bond["bonus"] if bond["bonus"] else float('-inf'), reverse=True)
+        bonds = data.get("bonds", [])
+        sorted_bonds = sorted(bonds, key=lambda bond: float(bond.get("bonus", "-inf")), reverse=True)
         top_10_bonds = sorted_bonds[:10]
 
         # Create message content
         text_message = ""
         for bond in top_10_bonds:
-            chain_name = get_chain_name(bond['chainId'])[:3]
-            bond_name = bond['payoutTokenName']
-            bonus = f"{bond['bonus']:.2f}"
+            chain_name = get_chain_name(bond.get('chainId', 0))[:3]
+            bond_name = bond.get('payoutTokenName', 'Unknown')
+            bonus_value = float(bond.get("bonus", 0) or 0)
+            bonus = f"{bonus_value:.2f}"
 
             text_message += f"- {chain_name} {bond_name} {bonus}%\n"
 
-            # Prepare data to save to database
-            contract_address = bond["billAddress"]
+            # Lấy thông tin cho database
+            contract_address = bond.get("billAddress", "N/A")
             date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-            min_price = f"{float(bond['trueBillPrice']) / (10 ** int(bond['principalTokenDecimals'])):,.2f}".replace(",", "")
-            max_price = f"{float(bond['maxTotalPayout']) / (10 ** int(bond['payoutTokenDecimals'])):,.2f}".replace(",", "")
-            max_buy = f"{float(bond['maxPayout']) / (10 ** int(bond['payoutTokenDecimals'])):,.2f}".replace(",", "")
+
+            true_bill_price = float(bond.get('trueBillPrice', 0) or 0)
+            principal_decimals = max(1, int(bond.get('principalTokenDecimals', 0) or 1))
+            min_price = f"{true_bill_price / (10 ** principal_decimals):.2f}"
+
+            max_total_payout = float(bond.get('maxTotalPayout', 0) or 0)
+            payout_decimals = max(1, int(bond.get('payoutTokenDecimals', 0) or 1))
+            max_price = f"{max_total_payout / (10 ** payout_decimals):.2f}"
+
+            max_payout = float(bond.get('maxPayout', 0) or 0)
+            max_buy = f"{max_payout / (10 ** payout_decimals):.2f}"
 
             insert_query = """
                 INSERT INTO bond_history (bond_name, contract_address, date_time, bonus, min_price, max_price, max_buy)
