@@ -1,7 +1,12 @@
+import threading
+import queue
 import requests
 import csv
 import sys
 import blacklist_tokens
+import time
+import concurrent.futures
+
 
 # Api urls of blockchains
 API_URLS = {
@@ -50,29 +55,123 @@ def get_latest_block(chain):
         print(f"Cannot get latest block: {data}")
         return None
 
-# Get transaction follow action of api url
-def get_transactions(chain, module, action, wallet_address, from_block, to_block):
+# API Configuration
+MAX_TXS_PER_REQUEST = 10000  
+MAX_BLOCKS_PER_REQUEST = 100000  
+MAX_BLOCKS_PER_BATCH = MAX_BLOCKS_PER_REQUEST * 5  # 500,000 blocks per batch
+API_DELAY = 1.0 / 5  # Limit to 5 requests per second
+
+def fetch_transactions(url, params):
+    """Sends API request to fetch transactions, handling pagination if necessary."""
+    all_transactions = []
+    page = 1
+
+    while True:
+        params['page'] = page
+        try:
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('status') == '1' and isinstance(data.get('result'), list):
+                    txs = data['result']
+
+                    if len(txs) == MAX_TXS_PER_REQUEST:
+                        print(f"⚠️ Possible missing transactions! Block range {params['startblock']} - {params['endblock']} may need smaller chunks.")
+
+                    if not txs:
+                        break  # No more transactions, exit loop
+
+                    all_transactions.extend(txs)
+                    print(f"✅ Page {page}: Retrieved {len(txs)} transactions.")
+
+                    if len(txs) < MAX_TXS_PER_REQUEST:
+                        break  # If transactions are below limit, stop
+                    page += 1  
+                else:
+                    break  
+        except requests.exceptions.RequestException as e:
+            print(f"❌ API Error: {e}")
+            break
+
+        time.sleep(API_DELAY)  # Avoid hitting rate limit
+
+    return all_transactions
+
+def process_block_range(chain, module, action, wallet_address, start_block, end_block):
+    """Fetches transaction data from API for a specific block range."""
+
     url = API_URLS[chain]
+    transactions = []
+    
+    print(f"🟢 Fetching transactions from block {start_block} to {end_block}...")
+
     params = {
         'module': module,
         'action': action,
         'address': wallet_address,
-        'startblock': from_block,
-        'endblock': to_block,
+        'startblock': start_block,
+        'endblock': end_block,
+        'offset': MAX_TXS_PER_REQUEST,
         'apikey': API_KEYS[chain]
     }
 
-    response = requests.get(url, params=params)
-    data = response.json()
+    txs = fetch_transactions(url, params=params)
+    if txs:
+        transactions.extend(txs)
+        print(f"✅ Retrieved {len(txs)} transactions from {start_block} to {end_block}.")
 
-    # Filter data by range of blocknumber
-    if data.get('status') == '1' and isinstance(data.get('result'), list):
-        return [
-            tx for tx in data['result']
-            if tx.get('blockNumber') and from_block <= int(tx.get('blockNumber')) <= to_block
-        ]
+        min_block = min(int(tx["blockNumber"]) for tx in txs)
+        max_block = max(int(tx["blockNumber"]) for tx in txs)
+        
+        if min_block > start_block or max_block < end_block:
+            print(f"⚠️ Possible missing data! Received block range {min_block} - {max_block}, expected {start_block} - {end_block}.")
+        
     else:
-        return []
+        print(f"⚠️ No transactions found in range {start_block} to {end_block}.")
+
+    time.sleep(API_DELAY)  # Ensure rate limit is respected
+    return transactions
+
+def get_transactions(chain, module, action, wallet_address, from_block, to_block):
+    """Splits block range into batches (5 segments per batch, each 100,000 blocks) and processes them sequentially."""
+
+    transactions = []
+    batch_ranges = []
+
+    current_block = from_block
+    while current_block <= to_block:
+        batch = []
+        for _ in range(5):  # Each batch contains 5 block segments
+            if current_block > to_block:
+                break
+            next_block = min(current_block + MAX_BLOCKS_PER_REQUEST - 1, to_block)
+            
+            batch.append((current_block, next_block))
+            current_block = next_block + 1
+
+        batch_ranges.append(batch)  # Store batch in list
+
+    # Process each batch sequentially
+    for i, batch in enumerate(batch_ranges):
+        print(f"\n🚀 Processing Batch {i+1}/{len(batch_ranges)} ({len(batch)} block ranges)...\n")
+
+        batch_start_time = time.time()  # Start time for batch
+
+        for b in batch:
+            result = process_block_range(chain, module, action, wallet_address, *b)
+
+            if result:
+                transactions.extend(result)
+
+        batch_end_time = time.time()  # End time for batch
+        batch_duration = batch_end_time - batch_start_time
+
+        # Ensure each batch takes at least 1 second to comply with rate limit
+        if batch_duration < 1.0:
+            time.sleep(1.0 - batch_duration)
+
+    print(f"\n🎉 Finished fetching transactions. Total: {len(transactions)}")
+    return transactions
 
 # Check block range
 def is_valid_block_range(chain, from_block, to_block):
