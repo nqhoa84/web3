@@ -1,12 +1,8 @@
-import threading
-import queue
 import requests
 import csv
 import sys
 import blacklist_tokens
 import time
-import concurrent.futures
-
 
 # Api urls of blockchains
 API_URLS = {
