@@ -115,12 +115,6 @@ def process_block_range(chain, module, action, wallet_address, start_block, end_
     if txs:
         transactions.extend(txs)
         print(f"✅ Retrieved {len(txs)} transactions from {start_block} to {end_block}.")
-
-        min_block = min(int(tx["blockNumber"]) for tx in txs)
-        max_block = max(int(tx["blockNumber"]) for tx in txs)
-        
-        if min_block > start_block or max_block < end_block:
-            print(f"⚠️ Possible missing data! Received block range {min_block} - {max_block}, expected {start_block} - {end_block}.")
         
     else:
         print(f"⚠️ No transactions found in range {start_block} to {end_block}.")
