@@ -7,19 +7,8 @@ from eth_account.messages import encode_defunct
 import time
 import sys
 
-# Database config 
-data_config = {
-    "host": "localhost",      
-    "user": "admin",               
-    "password": "admin",
-    "database": "apebond"
-}
-
 # Etherscan API Key 
 API_KEY_INFURA = "13ceaec149fe450c8b71b4e377aa2b83"
-
-# API URL Apebond
-api_url = "https://realtime-api.ape.bond/bonds"
 
 # Api urls of blockchains
 API_URLS = {
@@ -54,7 +43,7 @@ RPC_URLS = {
     # 'POL': f'https://polygon-rpc.com/',
     # 'ARB': f'https://arb1.arbitrum.io/rpc',
 
-PRIVATE_KEY = ""
+PRIVATE_KEY = "8d2065f47d5e5b15375c0d51d6bab2bc49900d38f548efbe99edb5bf45627c90"
 WALLET_ADDRESS = Account.from_key(PRIVATE_KEY).address
 
 BOND_ID = 12801
@@ -70,7 +59,7 @@ BOND_ID = 12801
 # ]
 
 BOND_CONTRACT_ADDRESS = [
-    "0xDe2Bd640CB746F0329388504787D59a8422F59B3"
+    "0x0C2946dC2aFa62E92e0f229739CC911Fe9Ef439d"
 ]
 
 USDC_TOKEN_CONTRACT_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -413,14 +402,16 @@ if __name__ == "__main__":
 
     bond_chain_id, bond_contract = transactions_function(bond_chain, bond_contract_address)
     
+    # Get USDC token contract
     implementation_usdc_token_contract_address = get_implementation_token_address(usdc_token_contract_address, bond_chain)
     implementation_usdc_token_abi = get_abi(bond_chain, implementation_usdc_token_contract_address)
     usdc_token_contract = web3_chain.eth.contract(address=usdc_token_contract_address, abi=implementation_usdc_token_abi)
-
+    
+    # Get principal token address
     proxy_token_address = bond_contract.functions.principalToken().call()
     token_chain, token_chain_name = find_chain_for_contract(proxy_token_address)
     
-    # Get token contract with proxy token and implementation token
+    # Get principal token contract with proxy token and implementation token
     implementation_token_address = get_implementation_token_address(proxy_token_address, token_chain)
     implementation_token_abi = get_abi(token_chain, implementation_token_address)
     token_contract = web3_chain.eth.contract(address=proxy_token_address, abi=implementation_token_abi)
@@ -502,7 +493,7 @@ if __name__ == "__main__":
             print(f"USDC decimals: {usdc_decimals}")
             print(f"Principal decimals: {principal_decimals}")
             
-            amount_approve = 5 * (10**usdc_decimals)
+            amount_approve = 1 * (10**principal_decimals)
             amount_revoke = 0
             
             slippage_tolerance = 0  # 0% slippage
@@ -516,22 +507,23 @@ if __name__ == "__main__":
             balance_wallet = token_contract.functions.balanceOf(WALLET_ADDRESS).call()
             allowance_token = token_contract.functions.allowance(WALLET_ADDRESS, bond_contract_address).call()
             
-            balance_wallet_scaled = balance_wallet / (10**(principal_decimals - 6))
-            allowance_usdc_token = usdc_token_contract.functions.allowance(WALLET_ADDRESS, base_uniswap_router_address).call()
+            print(f"Allowance: {allowance_token}")
+            print(f"Balance wallet: {balance_wallet}")
             
-            print(f"Implementation token address: {implementation_token_address}")
-            print(f"Allowance: {allowance_usdc_token}")
-            print(f"Balance wallet: {balance_wallet_scaled}")
+            # balance_wallet_scaled = balance_wallet / (10**(principal_decimals - 6))
+            # allowance_usdc_token = usdc_token_contract.functions.allowance(WALLET_ADDRESS, base_uniswap_router_address).call()
+            
+            # print(f"Implementation token address: {implementation_token_address}")
             
             # estimated_principal = get_usdc_to_principal_rate(base_uniswap_quoter_contract, amount_approve, usdc_token_contract_address, proxy_token_address)
             # print(f"Estimated principal by amount USDC: {estimated_principal}")
             
-            if proxy_token_address != usdc_token_contract_address:
-                if balance_wallet < amount_approve:
-                    print(f"⚠️ Not enough {proxy_token_address}, need to swap from USDC...")
-                    swap_usdc_to_principal_token(bond_chain, proxy_token_address, usdc_token_contract_address, usdc_token_contract, gas_price, amount_approve)
-            else:
-                print("Token is USDC, no need to swap.")
+            # if proxy_token_address != usdc_token_contract_address:
+            #     if balance_wallet < amount_approve:
+            #         print(f"⚠️ Not enough {proxy_token_address}, need to swap from USDC...")
+            #         swap_usdc_to_principal_token(bond_chain, proxy_token_address, usdc_token_contract_address, usdc_token_contract, gas_price, amount_approve)
+            # else:
+            #     print("Token is USDC, no need to swap.")
 
             # if balance_wallet < amount_approve:
             #     print("❌ Not enough tokens to buy bond.")
@@ -544,15 +536,15 @@ if __name__ == "__main__":
                 approve_token(token_contract, bond_contract_address, amount_approve, web3_chain, gas_price)
                 time.sleep(10)  
                 
-            print("⚡ Depositing bond...")
-            deposit_bond(bond_contract, amount_approve, max_price, web3_chain, gas_price)
+            # print("⚡ Depositing bond...")
+            # deposit_bond(bond_contract, amount_approve, max_price, web3_chain, gas_price)
 
-            print("⏳ Waiting 20 minutes before revoking approval...")
-            time.sleep(30)  
+            # print("⏳ Waiting 20 minutes before revoking approval...")
+            # time.sleep(30)  
 
-            print("🚫 Revoking token approval...")
-            approve_token(token_contract, bond_contract_address, amount_revoke, web3_chain, gas_price)
-            print("✅ Token approval revoked.")
+            # print("🚫 Revoking token approval...")
+            # approve_token(token_contract, bond_contract_address, amount_revoke, web3_chain, gas_price)
+            # print("✅ Token approval revoked.")
         
     else: 
         print("Error")
