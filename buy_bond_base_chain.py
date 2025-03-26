@@ -40,13 +40,13 @@ RPC_URLS = {
     'LIN': f'https://linea-mainnet.infura.io/v3/{API_KEY_INFURA}'
 }
 
-PRIVATE_KEY = "0x8d2065f47d5e5b15375c0d51d6bab2bc49900d38f548efbe99edb5bf45627c90"
+PRIVATE_KEY = "8d2065f47d5e5b15375c0d51d6bab2bc49900d38f548efbe99edb5bf45627c90"
 WALLET_ADDRESS = Account.from_key(PRIVATE_KEY).address
 print(f"WALLET ADDRESS: {WALLET_ADDRESS}")
 
 BOND_CONTRACT_ADDRESS = input("Enter the Bond Contract Address: ").strip()
 
-AMOUNT_APRROVAL = int(input("Enter the amount of Principal Token to approve: ").strip())
+AMOUNT_APRROVAL = int(input("Enter the amount of USDC Token to approve: ").strip())
 
 AMOUNT_DEPO = int(input("Enter the amount of Principal Token to buy: ").strip())
 
@@ -257,7 +257,7 @@ def wait_for_allowance_update(token_contract, wallet_address, spender_address, e
         time.sleep(sleep_time)
     print(f"❌ Allowance did not update after {max_attempts} attempts.")
     sys.exit()
-    
+
 if __name__ == "__main__":
 
     for chain, web3 in web3_instances.items():
@@ -316,11 +316,11 @@ if __name__ == "__main__":
     print(f"Balance wallet: {balance_wallet}")
     
     if bond_contract and token_contract:
-        if supports_permit:
+        if can_use_permit(token_contract, bond_contract):
         
             wallet_addr = Web3.to_checksum_address(WALLET_ADDRESS)
             bond_addr = Web3.to_checksum_address(BOND_CONTRACT_ADDRESS)
-            proxy_addr = Web3.to_checksum_address(token_contract.address)
+            proxy_addr = Web3.to_checksum_address(implementation_token_address)
 
             # Lấy nonce hiện tại
             nonce = token_contract.functions.nonces(WALLET_ADDRESS).call()
@@ -340,33 +340,39 @@ if __name__ == "__main__":
             print(f"Proxy Token Address: {proxy_addr}")
             print(f"Bond Contract Address: {bond_addr}")
 
-            # ✅ Kiểm tra lại `DOMAIN_SEPARATOR`
-            on_chain_domain = token_contract.functions.DOMAIN_SEPARATOR().call()
-            print(f"On-chain DOMAIN_SEPARATOR: {on_chain_domain.hex()}")
+            proxy_domain_separator = token_contract.functions.DOMAIN_SEPARATOR().call()
+            implementation_token_contract = web3_chain.eth.contract(address=implementation_token_address, abi=implementation_token_abi)
+            implementation_domain_separator = implementation_token_contract.functions.DOMAIN_SEPARATOR().call()
 
-            # ✅ Tạo domain separator
-            DOMAIN_TYPEHASH = Web3.keccak(
-                text="EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-            )
-            calculated_domain_separator = Web3.solidity_keccak(
-                ["bytes32", "bytes32", "bytes32", "uint256", "address"],
-                [
-                    DOMAIN_TYPEHASH,
-                    Web3.keccak(text=token_name),     # Hash của name
-                    Web3.keccak(text=token_version),  # Hash của version
-                    chain_id_permit,
-                    proxy_addr  # Verifying contract (phải ở checksum format)
-                ],
+            print(f"✅ DOMAIN_SEPARATOR từ Proxy Token: {proxy_domain_separator.hex()}")
+            print(f"✅ DOMAIN_SEPARATOR từ Implementation Token: {implementation_domain_separator.hex()}")
+
+            # DOMAIN_TYPEHASH = Web3.to_bytes(
+            #     hexstr="0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f"
+            # )
+
+            # calculated_domain_separator = Web3.solidity_keccak(
+            #     ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+            #     [
+            #         DOMAIN_TYPEHASH,
+            #         Web3.keccak(text=token_name),
+            #         Web3.keccak(text=token_version),
+            #         chain_id_permit,
+            #         proxy_addr  # Verifying contract address
+            #     ]
+            # )
+
+            # print(f"📝 Recalculated DOMAIN_SEPARATOR: {proxy_domain_separator.hex()}")
+            # print(f"✅ On-chain DOMAIN_SEPARATOR: {implementation_domain_separator.hex()}")
+
+            on_chain_permit_typehash = token_contract.functions.PERMIT_TYPEHASH().call()
+            print(f"✅ On-chain PERMIT_TYPEHASH: {on_chain_permit_typehash.hex()}")
+            
+            PERMIT_TYPEHASH = Web3.to_bytes(
+                hexstr="0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9"
             )
 
-            print(f"Calculated domain_hash: {calculated_domain_separator.hex()}")
-            print(f"On-chain DOMAIN_SEPARATOR: {on_chain_domain.hex()}")
-
-            # ✅ Tạo `permit_hash`
-            PERMIT_TYPEHASH = Web3.keccak(
-                text="Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-            )
-            permit_hash = Web3.solidity_keccak(
+            struct_hash = Web3.solidity_keccak(
                 ["bytes32", "address", "address", "uint256", "uint256", "uint256"],
                 [
                     PERMIT_TYPEHASH,
@@ -375,38 +381,49 @@ if __name__ == "__main__":
                     int(amount_approve),
                     int(nonce),
                     int(deadline),
-                ],
+                ]
+            )
+            
+            print(f"✅ Permit typehash: {PERMIT_TYPEHASH.hex()}")
+
+            eip712_hash = Web3.solidity_keccak(
+                ["bytes32", "bytes32"],
+                [implementation_domain_separator, struct_hash]  # Sử dụng Implementation Token DOMAIN_SEPARATOR
             )
 
-            # ✅ Tạo EIP-712 hash chuẩn
-            eip712_hash = Web3.solidity_keccak(["bytes32", "bytes32"], [calculated_domain_separator, permit_hash])
+            signer_address = Account.from_key(PRIVATE_KEY).address
+            print(f"Signer address: {signer_address}")
+            assert signer_address.lower() == wallet_addr.lower(), "⚠️ Private key không khớp với Wallet Address!"
 
-            # ✅ Ký bằng `encode_defunct()` (EIP-191)
-            signed_message = Account.sign_message(encode_defunct(eip712_hash), private_key=PRIVATE_KEY)
+            
+            # Ký bằng private key
+            message = encode_defunct(eip712_hash)
+            signed_message = Account.sign_message(message, private_key=PRIVATE_KEY)
 
-            # ✅ Lấy `v, r, s`
-            v = signed_message.v
+            # Lấy r, s, v
             r = signed_message.r
             s = signed_message.s
+            v = signed_message.v
 
-            print(f"Permit Signature:\n v = {v}\n r = {hex(r)}\n s = {hex(s)}")
+            # Đảm bảo v thuộc {27, 28}
+            if v < 27:
+                v += 27
+            
+            print(f"📝 Signature v: {v}")
+            print(f"📝 Signature r: {hex(r)}")
+            print(f"📝 Signature s: {hex(s)}")
 
-            # ✅ Kiểm tra địa chỉ recover từ chữ ký
-            recovered_addr = Account.recover_message(encode_defunct(eip712_hash), signature=signed_message.signature)
-            print("Recovered Address:", recovered_addr)
-            if recovered_addr.lower() != wallet_addr.lower():
-                print("⚠️ ERROR: Recovered address does NOT match wallet address!")
-            else:
-                print("✅ Recovered address matches wallet address")
+            # Đóng gói chữ ký
+            signature_bytes = (r.to_bytes(32, byteorder="big") + s.to_bytes(32, byteorder="big") + v.to_bytes(1, byteorder="big"))
 
-            # ✅ Thực hiện permit trên smart contract
+            # Gửi giao dịch `permit`
             try:
-                tx = token_contract.functions.permit(
-                    wallet_addr, bond_addr, int(amount_approve), int(deadline), signed_message.signature
-                ).call({"from": WALLET_ADDRESS})
-                print("✅ Permit call successful!")
+                tx = implementation_token_contract.functions.permit(
+                    wallet_addr, bond_addr, int(amount_approve), int(deadline), signature_bytes
+                ).transact({"from": wallet_addr})
+                print("✅ Permit transaction sent:", tx.hex())
             except Exception as e:
-                print(f"❌ Permit call failed: {str(e)}")
+                print("❌ Permit failed on implementation token:", str(e))
             
             # sign_tx_permit = web3_chain.eth.account.sign_transaction(tx_permit, private_key=PRIVATE_KEY)
             # tx_hash_permit = web3_chain.eth.send_raw_transaction(sign_tx_permit.raw_transaction)
@@ -431,6 +448,8 @@ if __name__ == "__main__":
             # print(f"Deposit With Tx Permit Hash: {web3_chain.to_hex(tx_hash_deposit)}")
             
         else:
+            tx_hash = None
+            
             if balance_wallet < amount_approve:
                 print("❌ Not enough tokens to buy bond.")
                 sys.exit()
@@ -444,6 +463,7 @@ if __name__ == "__main__":
                 
                 print(f"Tx Hash: {web3_chain.to_hex(tx_hash)}")
                 
+            if tx_hash is not None:
                 wait_for_tx_receipt(web3_chain, web3_chain.to_hex(tx_hash))
                 
                 wait_for_allowance_update(token_contract, WALLET_ADDRESS, bond_contract_address, amount_approve)
@@ -459,11 +479,16 @@ if __name__ == "__main__":
                 deposit_bond(bond_contract, amount_deposit, max_price, web3_chain, gas_price)
 
             print("⏳ Waiting 20 minutes before revoking approval...")
-            time.sleep(30)  
+            time.sleep(60)  
 
             print("🚫 Revoking token approval...")
             approve_token(token_contract, bond_contract_address, amount_revoke, web3_chain, gas_price)
             print("✅ Token approval revoked.")
+            
+            wait_for_allowance_update(token_contract, WALLET_ADDRESS, bond_contract_address, amount_deposit)
+            
+            allowance_token_after = token_contract.functions.allowance(WALLET_ADDRESS, bond_contract_address).call()
+            print(f"Allowance after approve: {allowance_token_after}")
         
     else: 
         print("Error")
