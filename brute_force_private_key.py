@@ -37,11 +37,11 @@ def worker(args):
             percent_done = ((total_tasks - total_combinations + checked) / total_tasks) * 100
             
             with log_lock:
-                queue.put(f"🔹 {checked}/{total_combinations} ({percent_done:.2f}%) tổ hợp, còn ~{remaining_time:.2f}s")
+                queue.put(f"🔹 {checked}/{total_combinations} ({percent_done:.2f}%) combination, still ~{remaining_time:.2f}s")
 
         # Check if the private key is correct
         if private_key_to_address(test_PK) == V:
-            print(f"✅ Tìm thấy! Private Key: {test_PK} tại checked: {checked}")
+            print(f"✅ Find! Private Key: {test_PK}, checked: {checked}")
             
             found_event.set()
             return test_PK
@@ -56,7 +56,6 @@ def log_listener(queue):
 
 # Found missing private key using multiprocessing
 def find_missing_private_key(PKa, V):
-    """ Tìm kiếm Private Key bị mất bằng multiprocessing """
     missing_total = 64 - len(PKa)
     total_tasks = len(hex_chars) ** missing_total  # Total number of combinations to check
     
@@ -71,7 +70,7 @@ def find_missing_private_key(PKa, V):
 
         for missing_x in range(missing_total + 1):
             missing_y = missing_total - missing_x
-            print(f"🚀 Thử missing_x={missing_x}, missing_y={missing_y}")
+            print(f"🚀 Check missing_x={missing_x}, missing_y={missing_y}")
 
             # Split prefixes for multiprocessing
             prefixes = list(itertools.product(hex_chars, repeat=missing_x))
@@ -104,9 +103,9 @@ if __name__ == "__main__":
     end = time.time()
 
     if found_PK:
-        print(f"🔑 Private Key Tìm Thấy: {found_PK}")
+        print(f"🔑 Found Private key: {found_PK}")
     else:
-        print("❌ Không tìm thấy Private Key phù hợp.")
+        print("❌ No matching Private Key found.")
 
-    print(f"⏳ Tổng thời gian chạy: {end - start:.2f} giây")
+    print(f"⏳ Total running time: {end - start:.2f} giây")
     
