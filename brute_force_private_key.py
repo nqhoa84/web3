@@ -13,7 +13,7 @@ def private_key_to_address(private_key_hex):
     private_key_bytes = bytes.fromhex(private_key_hex)
     public_key = keys.PrivateKey(private_key_bytes).public_key
     address = keccak(public_key.to_bytes())[12:].hex()
-    return to_checksum_address(address)
+    return address
 
 # Worker function for multiprocessing
 def worker(args):
@@ -94,8 +94,8 @@ def find_missing_private_key(PKa, V):
     return None
 
 if __name__ == "__main__":
-    PKa = input("Enter missing private key: ").strip()
-    V = input("Enter wallet address: ").strip()
+    PKa = "065f47d5e5b15375c0d51d6bab2bc49900d38f548efbe99edb5bf45627c9"
+    V = "0cdd83cc0f8ecd83aba35d111c42b67f9b545f2e"
 
     # 🔥 Run
     start = time.time()
@@ -108,4 +108,5 @@ if __name__ == "__main__":
         print("❌ No matching Private Key found.")
 
     print(f"⏳ Total running time: {end - start:.2f} giây")
+    
     
