@@ -28,6 +28,8 @@ web3 = Web3(Web3.HTTPProvider(BSC_RPC))
 # Địa chỉ của MasterChef V3 Contract
 MASTER_CHEF_ADDRESS = Web3.to_checksum_address("0x556B9306565093C855AEA9AE92A594704c2Cd59e")  # Thay bằng địa chỉ hợp đồng thực tế
 
+POOL_ADDRESS =  Web3.to_checksum_address("0x06aC8EE32BCdcE6bF2eA82D9Bfb932a84D45BFcb")
+
 def get_abi(chain, contract_address):
     if chain not in API_URLS or chain not in API_KEYS:
         print(f"❌ No API URL or API Key for {chain}")
@@ -72,11 +74,35 @@ def get_pancakeswap_reward():
             # print(json.dumps(data, indent=4))  
             return data
         else:
+            print("❌ reward data not found")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ API request failed: {e}")
+        return None
+
+def get_infos_pool(pool_address):
+    API_URL = f"https://explorer.pancakeswap.com/api/cached/pools/bsc/{pool_address}"
+    
+    try:
+        response = requests.get(API_URL)
+        response.raise_for_status()  # Check error HTTP
+        data = response.json()
+        
+        if "id" in data: 
+            return data
+        else:
             print("❌ Pool data not found")
             return None
     except requests.exceptions.RequestException as e:
         print(f"❌ API request failed: {e}")
         return None
+    
+
+def get_cake_price_usd():
+    API_URL = "https://api.coingecko.com/api/v3/simple/price?ids=pancakeswap-token&vs_currencies=usd"
+    response = requests.get(API_URL)
+    data = response.json()
+    return data["pancakeswap-token"]["usd"]
 
 # ABI của MasterChef V3 Contract
 master_chef_abi = get_abi('BNB', MASTER_CHEF_ADDRESS)
@@ -98,20 +124,29 @@ print(f"✅ Tổng thanh khoản của position đã staking: {total_liquidity_p
 
 pool_info = masterchef_contract.functions.poolInfo(pid).call()
 total_liquidity_pool_stake = float(pool_info[5]) / 1e18
-print(f"✅ Tổng thanh khoản của Pool đã staking: {total_liquidity_pool_stake}")
-
-# Lấy tổng thanh khoản từ pool
-total_liquidity = float(pool_info[5]) / 1e18  # Tổng thanh khoản (totalLiquidity)
-print(f"✅ Tổng thanh khoản của Pool: {total_liquidity}")
+print(f"✅ Tổng thanh khoản của Pool bao gồm cả in-range và out-of-range: {total_liquidity_pool_stake}")
 
 # Lấy số lượng phần thưởng mỗi giây
 cake_per_second, end_time = masterchef_contract.functions.getLatestPeriodInfoByPid(pid).call()
 
-# Tính số lượng phần thưởng hàng ngày
-total_rewards_per_day = (cake_per_second * 60 * 60 * 24) / (10**18)  # Tính tổng phần thưởng trong một ngày
-print(f"✅ Số lượng phần thưởng mỗi ngày: {cake_per_second} CAKE")
+# reward_data = get_pancakeswap_reward()
+# # Giá của CAKE (giá thị trường, có thể lấy từ API hoặc giá thực tế)
+# reward_price = float(reward_data['data']['rewardPrice']) / 1e18  # Giá CAKE (cần lấy từ nguồn khác)
+# print(f"Reward price: {reward_price}")
 
-reward_data = get_pancakeswap_reward()
-# Giá của CAKE (giá thị trường, có thể lấy từ API hoặc giá thực tế)
-reward_price = float(reward_data['data']['rewardPrice']) / 1e18  # Giá CAKE (cần lấy từ nguồn khác)
-print(f"Reward price: {reward_price}")
+# Get CAKE price
+cake_price_usd = get_cake_price_usd()
+print(f"CAKE price: {cake_price_usd}")
+
+total_reward_per_year = float(cake_per_second / 10**30) * (365*24*60*60) * cake_price_usd
+print(f"✅ Amount reward per year: {total_reward_per_year}")
+
+# total tokens locked of pool
+pool_data = get_infos_pool(POOL_ADDRESS)
+
+tvl_usd = pool_data["tvlUSD"]
+print(f"✅ Total Tokens Locked: {tvl_usd}")
+
+# Farm APR of Pool
+farm_apr_pool = (total_reward_per_year / float(total_liquidity_pool_stake)) * 100
+print(f"✅ Farm APR of Pool: {farm_apr_pool}%")

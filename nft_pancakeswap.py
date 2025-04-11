@@ -28,15 +28,22 @@ API_KEYS = {
 RPC_URL = "https://bsc-dataseed.binance.org/" 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 
-# PancakeSwap V3 NFT Position Manager contract (BSC Mainnet)
-CONTRACT_ADDRESS = "0x46a15b0b27311cedf172ab29e4f4766fbe7f4364"  # Cập nhật đúng địa chỉ
+# PancakeSwap:Nonfungible Position Manager V3 contract address(BSC Mainnet)
+NPM_ADDRESS = Web3.to_checksum_address("0x46a15b0b27311cedf172ab29e4f4766fbe7f4364")
 
-TOKEN_ID = 1547267
+# PancakeSwap: Masterchef V3 contract address 
+MASTERCHEF_ADDRESS = Web3.to_checksum_address("0x556B9306565093C855AEA9AE92A594704c2Cd59e")
 
-# PancakeSwap V3 Information on BSC
+# PancakeSwap: Pool contract address
+POOL_ADDRESS =  Web3.to_checksum_address("0x06aC8EE32BCdcE6bF2eA82D9Bfb932a84D45BFcb")
+
+# PancakeSwap: Factory V3 contract address
 FACTORY_ADDRESS = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
 
-# Get ABI of contract
+# NFT id of NFT Position Liquidity on PancakeSwap
+TOKEN_ID = 1547267
+
+# Get ABI of contract address
 def get_abi(chain, contract_address):
     if chain not in API_URLS or chain not in API_KEYS:
         print(f"❌ No API URL or API Key for {chain}")
@@ -119,6 +126,24 @@ def get_price_tokens(operator_address, token0_address):
         print(f"❌ API request failed: {e}")
         return None
 
+# Get apr of pool
+def get_pancakeswap_apr_pool_data(pool_address):
+    API_URL = f"https://explorer.pancakeswap.com/api/cached/pools/apr/v3/bsc/{pool_address}"
+    
+    try:
+        response = requests.get(API_URL)
+        response.raise_for_status()  # Check error HTTP
+        data = response.json()
+        
+        if "apr24h" in data: 
+            return data
+        else:
+            print("❌ APR of pool data not found")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ API request failed: {e}")
+        return None
+
 # Convert ticks to prices using the formula: price = 1.0001^tick
 def tick_to_price(tick):
     return math.pow(1.0001, tick)
@@ -128,32 +153,6 @@ def calculate_min_max_price(tick_lower, tick_upper):
     min_price = tick_to_price(tick_lower)
     max_price = tick_to_price(tick_upper)
     return min_price, max_price
-
-# def amount_tokens(tick_lower, tick_upper, current_tick, liquidity, token0_decimal, token1_decimal):
-#     # Calculate min and max price range
-#     p_lower = tick_to_price(tick_lower)
-#     p_upper = tick_to_price(tick_upper)
-#     p_current = tick_to_price(current_tick)
-
-#     # Compute token amounts based on whether we are in range or not
-#     if tick_lower <= current_tick <= tick_upper:
-#         # In range: Calculate both token0 and token1 amounts
-#         amount_token0 = liquidity * (math.sqrt(p_upper) - math.sqrt(p_current)) / (math.sqrt(p_upper) * math.sqrt(p_current))
-#         amount_token1 = liquidity * (math.sqrt(p_current) - math.sqrt(p_lower))
-#     else:
-#         # Out of range: Only one token is available
-#         if current_tick < tick_lower:
-#             amount_token0 = liquidity * (math.sqrt(p_upper) - math.sqrt(p_lower)) / (math.sqrt(p_upper) * math.sqrt(p_lower))
-#             amount_token1 = 0
-#         else:
-#             amount_token0 = 0
-#             amount_token1 = liquidity * (math.sqrt(p_upper) - math.sqrt(p_lower))
-
-#     # Convert to human-readable format (assuming 18 decimals for both tokens)
-#     amount_token0 /= (10**token0_decimal)
-#     amount_token1 /= (10**token1_decimal)
-    
-#     return amount_token0, amount_token1
 
 # Calculate amount token0 and token1 from liquidity in smart contract Position
 def get_amounts_from_liquidity(liquidity, sqrt_price_x96, tick_lower, tick_upper):
@@ -185,13 +184,28 @@ def get_name_contract_address(pool_address, contract_address):
             return pool_data["token1"].get("name", "Unknown Token Name")
     return "Unknown Token Name"
 
+# Get CAKE price USD
+def get_cake_price_usd():
+    API_URL = "https://api.coingecko.com/api/v3/simple/price?ids=pancakeswap-token&vs_currencies=usd"
+    response = requests.get(API_URL)
+    data = response.json()
+    return data["pancakeswap-token"]["usd"]
+
 # ABI and Contract instance of PancakeSwap V3 NFT Position Manager contract (BSC Mainnet)
-abi_position = get_abi("BNB", CONTRACT_ADDRESS)
-contract = w3.eth.contract(address=Web3.to_checksum_address(CONTRACT_ADDRESS), abi=abi_position)
+abi_position = get_abi("BNB", NPM_ADDRESS)
+contract = w3.eth.contract(address=Web3.to_checksum_address(NPM_ADDRESS), abi=abi_position)
 
 # ABI and contract instance of PancakeSwap V3 Factory contract (BSC Mainnet)
 abi_factory = get_abi("BNB", FACTORY_ADDRESS)
 factory_contract = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=abi_factory)
+
+# ABI and contract instance of Masterchef V3 contract (BSC Mainnet)
+abi_masterchef = get_abi("BNB", MASTERCHEF_ADDRESS)
+masterchef_contract = w3.eth.contract(address=Web3.to_checksum_address(MASTERCHEF_ADDRESS), abi=abi_masterchef)
+
+# ABI and contract instance of Pool contract (BSC Mainnet)
+abi_pool = get_abi("BNB", POOL_ADDRESS)
+pool_contract = w3.eth.contract(address=Web3.to_checksum_address(POOL_ADDRESS), abi=abi_pool)
 
 # Lấy dữ liệu NFT ID 1547267
 nft_id = 1547267
@@ -235,7 +249,7 @@ slot0 = pool_contract.functions.slot0().call()
 sqrt_price_x96 = slot0[0]
 
 # Get Mint transaction
-mint_transactions, action, time_stamp_formatted, tx_hash_mint = get_mint_transactions(CONTRACT_ADDRESS, nft_id, API_KEYS["BNB"])
+mint_transactions, action, time_stamp_formatted, tx_hash_mint = get_mint_transactions(NPM_ADDRESS, nft_id, API_KEYS["BNB"])
 
 # Price tokens 
 price_token_data = get_price_tokens(operator, token0)
@@ -268,6 +282,51 @@ price_unclaimed_fee_token0 = unclaimed_fee_token0 * price_token_data[f"56:{token
 price_unclaimed_fee_token1 = unclaimed_fee_token1 * price_token_data[f"56:{operator}"]
 total_unclaimed_fees = price_unclaimed_fee_token0 + price_unclaimed_fee_token1
 
+# Get pool address pip from masterchef V3
+pool_address_pip = masterchef_contract.functions.v3PoolAddressPid(pool_address).call()
+
+# Get total staked liquidity of pool
+total_staked_liquidity_pool = masterchef_contract.functions.poolInfo(pool_address_pip).call()[5]
+
+# Get staked liquidity of position
+staked_liquidity_position = masterchef_contract.functions.userPositionInfos(TOKEN_ID).call()[0]
+print(f"✅ Tổng thanh khoản của position: {staked_liquidity_position}")
+
+# Get cake reward per second 
+cake_price = get_cake_price_usd()
+cake_per_second = masterchef_contract.functions.getLatestPeriodInfo(pool_address).call()[0]
+cake_per_second_convert = Decimal(cake_per_second)/10**30
+cake_per_year = cake_per_second_convert * (365*24*60*60) * Decimal(cake_price)
+
+rate_position = (Decimal(staked_liquidity_position) / Decimal(total_staked_liquidity_pool))
+cake_per_year_position = cake_per_year * rate_position
+
+boost_multiplier = masterchef_contract.functions.userPositionInfos(TOKEN_ID).call()[8]
+
+liquidity_position_usd = Decimal(staked_liquidity_position/10**18)
+# Position Farm APR
+base_farm_apr_position = (cake_per_year_position / liquidity_position_usd) * 100
+farm_apr_position = base_farm_apr_position * (Decimal(boost_multiplier)/10**12)
+print(f"*** APRs BLOCK ***")
+print(f"Position Farm APR: {round(farm_apr_position, 2)}")
+
+# Get apr of pool data
+apr_pool_data = get_pancakeswap_apr_pool_data(pool_address)
+fee_usd_24h = pool_data["feeUSD24h"]
+apr_24h = apr_pool_data["apr24h"]
+apr_7d = apr_pool_data["apr7d"]
+liquidity_pool_in_range = pool_data["liquidity"]
+fee_tier = (Decimal(fee) / 10**6)
+
+# LP Fee APR of Position
+fee_per_year_position = (Decimal(fee_usd_24h) * rate_position) * 365
+lp_fee_apr_position = (fee_per_year_position / total_liquidity) * 100
+
+print(f"Position LP Fee APR: {round(lp_fee_apr_position, 2)}")
+print(f"Combined APR: {round((lp_fee_apr_position + farm_apr_position), 2)} \n")
+print(f"Pool LP Fee APR: {round((float(apr_24h) * 100), 2)}")
+print(f"Farm pool LP Fee APR: {round((float(apr_7d) * 100), 2)}\n\n")
+
 # Show data
 print(f"*** TOKEN INFO BLOCK ***")
 print(f"Token 1 address: {pool_data["token0"]["id"]}, Token1 name: {pool_data["token0"]["name"]}")
@@ -278,23 +337,23 @@ print(f"Fee: {fee}")
 print("\n")
 
 print(f"*** LIQUIDITY BLOCK ***")
-print(f"Total Liquidity: {total_liquidity}")
-print(f"Amount Token 0: {amount_token0_decimal}, Price: {price_token0}")
-print(f"Amount Token 1: {amount_token1_decimal}, Price: {price_token1}")
+print(f"Total Liquidity: {round(total_liquidity, 2)}")
+print(f"Amount Token 0: {round(amount_token0_decimal)}, Price: {round(price_token0, 2)}")
+print(f"Amount Token 1: {round(amount_token1_decimal, 4)}, Price: {round(price_token1, 2)}")
 
 print("\n")
 
 print(f"*** UNCLAIMED FEES BLOCK ***")
-print(f"Unclaimed fees: {total_unclaimed_fees}")
-print(f"Unclaimed fee token 0: {unclaimed_fee_token0}, Price: {price_unclaimed_fee_token0}")
-print(f"Unclaimed fee token 1: {unclaimed_fee_token1}, Price: {price_unclaimed_fee_token1}")
+print(f"Unclaimed fees: {round(total_unclaimed_fees, 2)}")
+print(f"Unclaimed fee token 0: {round(unclaimed_fee_token0)}, Price: {round(price_unclaimed_fee_token0, 2)}")
+print(f"Unclaimed fee token 1: {round(unclaimed_fee_token1, 4)}, Price: {round(price_unclaimed_fee_token1, 2)}")
 
 print("\n")
 
 print(f"*** PRICE RANGE BLOCK ***")
-print(f"Max Price: {(1/min_price):.2f}")
-print(f"Min Price: {(1/max_price):.2f}")
-print(f"Current Price(INSP per BNB): {pool_data["token0Price"]}")
+print(f"Max Price: {round(1/min_price)}")
+print(f"Min Price: {round((1/max_price), 1)}")
+print(f"Current Price(INSP per BNB): {round(float(pool_data["token0Price"]), 1)}")
 print(f"Current Price(BNB per INSP): {pool_data["token1Price"]}")
 
 print("\n")
@@ -308,6 +367,9 @@ for tx in mint_transactions:
     print(f"Token Contract: {tx['token_contract']}, Token Name: {get_name_contract_address(pool_address, tx['token_contract'])}")
     # print(f"From: {tx['from_address']}")
     # print(f"To: {tx['to_address']}")
-    print(f"Value: {tx['value']} tokens")
+    if(tx['token_contract'] == token0.lower()):
+        print(f"Amount: {round(float(tx['value']), 1)} tokens")
+    if(tx['token_contract'] == token1.lower()):
+        print(f"Value: {round(float(tx['value']), 6)} tokens")
     # print(f"TimeStamp: {tx['time_stamp']}")
     # print(f"Action: {tx['action']} \n")
