@@ -34,11 +34,8 @@ NPM_ADDRESS = Web3.to_checksum_address("0x46a15b0b27311cedf172ab29e4f4766fbe7f43
 # PancakeSwap: Masterchef V3 contract address 
 MASTERCHEF_ADDRESS = Web3.to_checksum_address("0x556B9306565093C855AEA9AE92A594704c2Cd59e")
 
-# PancakeSwap: Pool contract address
-POOL_ADDRESS =  Web3.to_checksum_address("0x06aC8EE32BCdcE6bF2eA82D9Bfb932a84D45BFcb")
-
 # PancakeSwap: Factory V3 contract address
-FACTORY_ADDRESS = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+FACTORY_ADDRESS = Web3.to_checksum_address("0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865")
 
 # NFT id of NFT Position Liquidity on PancakeSwap
 TOKEN_ID = 1547267
@@ -192,8 +189,8 @@ def get_cake_price_usd():
     return data["pancakeswap-token"]["usd"]
 
 # ABI and Contract instance of PancakeSwap V3 NFT Position Manager contract (BSC Mainnet)
-abi_position = get_abi("BNB", NPM_ADDRESS)
-contract = w3.eth.contract(address=Web3.to_checksum_address(NPM_ADDRESS), abi=abi_position)
+abi_npm = get_abi("BNB", NPM_ADDRESS)
+npm_contract = w3.eth.contract(address=Web3.to_checksum_address(NPM_ADDRESS), abi=abi_npm)
 
 # ABI and contract instance of PancakeSwap V3 Factory contract (BSC Mainnet)
 abi_factory = get_abi("BNB", FACTORY_ADDRESS)
@@ -203,13 +200,9 @@ factory_contract = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDR
 abi_masterchef = get_abi("BNB", MASTERCHEF_ADDRESS)
 masterchef_contract = w3.eth.contract(address=Web3.to_checksum_address(MASTERCHEF_ADDRESS), abi=abi_masterchef)
 
-# ABI and contract instance of Pool contract (BSC Mainnet)
-abi_pool = get_abi("BNB", POOL_ADDRESS)
-pool_contract = w3.eth.contract(address=Web3.to_checksum_address(POOL_ADDRESS), abi=abi_pool)
-
 # Lấy dữ liệu NFT ID 1547267
 nft_id = 1547267
-position_data = contract.functions.positions(nft_id).call()
+position_data = npm_contract.functions.positions(nft_id).call()
 
 operator = Web3.to_checksum_address(position_data[1])
 token0 = Web3.to_checksum_address(position_data[2])
@@ -221,16 +214,16 @@ tick_upper = position_data[6]
 tokens_owed0 = position_data[10]
 tokens_owed1 = position_data[11]
 
-fee_growth0 = position_data[8]
-fee_growth1 = position_data[9]
-print(f"fee growth 0: {fee_growth0}, fee growth 1: {fee_growth1}")
-
 # Get pool address from Factory Contract
-pool_address = factory_contract.functions.getPool(token0, token1, fee).call()
-print(f"Pool Address: {pool_address}")
+POOL_ADDRESS = factory_contract.functions.getPool(token0, token1, fee).call()
+print(f"Pool Address: {POOL_ADDRESS}")
+
+# ABI and contract instance of Pool contract (BSC Mainnet)
+abi_pool = get_abi("BNB", Web3.to_checksum_address(POOL_ADDRESS))
+pool_contract = w3.eth.contract(address=Web3.to_checksum_address(POOL_ADDRESS), abi=abi_pool)
 
 # Get API data of pool
-pool_data = get_pancakeswap_pool_data(pool_address)
+pool_data = get_pancakeswap_pool_data(POOL_ADDRESS)
 token0_name = pool_data["token0"]["name"]
 token1_name = pool_data["token1"]["name"]
 token0_decimal = pool_data["token0"]["decimals"]
@@ -243,8 +236,6 @@ current_tick = pool_data["tick"]
 status = get_position_status(liquidity, tick_lower, tick_upper, current_tick, tokens_owed0, tokens_owed1)
 
 # Pool Contract instance
-pool_abi = get_abi("BNB", Web3.to_checksum_address(pool_address))
-pool_contract = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=pool_abi)
 slot0 = pool_contract.functions.slot0().call()
 sqrt_price_x96 = slot0[0]
 
@@ -256,7 +247,6 @@ price_token_data = get_price_tokens(operator, token0)
 print(f"Token0: {token0}")
 print(f"Price Operator: {price_token_data[f"56:{operator}"]}")
 print(f"Price Token0: {price_token_data[f"56:{token0.lower()}"]}")
-
 print(f"Positons data: {position_data} \n \n")
 
 # Min and max price
@@ -271,7 +261,7 @@ price_token1 = Decimal(price_token_data[f"56:{operator}"] )* amount_token1_decim
 total_liquidity = price_token0 + price_token1
 
 # Amount tokens unclaimed and Unclaimed fees
-fees = contract.functions.collect(
+fees = npm_contract.functions.collect(
     (nft_id, operator, 2**128-1, 2**128-1)
 ).call()
 
@@ -283,18 +273,17 @@ price_unclaimed_fee_token1 = unclaimed_fee_token1 * price_token_data[f"56:{opera
 total_unclaimed_fees = price_unclaimed_fee_token0 + price_unclaimed_fee_token1
 
 # Get pool address pip from masterchef V3
-pool_address_pip = masterchef_contract.functions.v3PoolAddressPid(pool_address).call()
+pool_address_pip = masterchef_contract.functions.v3PoolAddressPid(POOL_ADDRESS).call()
 
 # Get total staked liquidity of pool
 total_staked_liquidity_pool = masterchef_contract.functions.poolInfo(pool_address_pip).call()[5]
 
 # Get staked liquidity of position
 staked_liquidity_position = masterchef_contract.functions.userPositionInfos(TOKEN_ID).call()[0]
-print(f"✅ Tổng thanh khoản của position: {staked_liquidity_position}")
 
 # Get cake reward per second 
 cake_price = get_cake_price_usd()
-cake_per_second = masterchef_contract.functions.getLatestPeriodInfo(pool_address).call()[0]
+cake_per_second = masterchef_contract.functions.getLatestPeriodInfo(POOL_ADDRESS).call()[0]
 cake_per_second_convert = Decimal(cake_per_second)/10**30
 cake_per_year = cake_per_second_convert * (365*24*60*60) * Decimal(cake_price)
 
@@ -304,6 +293,7 @@ cake_per_year_position = cake_per_year * rate_position
 boost_multiplier = masterchef_contract.functions.userPositionInfos(TOKEN_ID).call()[8]
 
 liquidity_position_usd = Decimal(staked_liquidity_position/10**18)
+
 # Position Farm APR
 base_farm_apr_position = (cake_per_year_position / liquidity_position_usd) * 100
 farm_apr_position = base_farm_apr_position * (Decimal(boost_multiplier)/10**12)
@@ -311,7 +301,7 @@ print(f"*** APRs BLOCK ***")
 print(f"Position Farm APR: {round(farm_apr_position, 2)}")
 
 # Get apr of pool data
-apr_pool_data = get_pancakeswap_apr_pool_data(pool_address)
+apr_pool_data = get_pancakeswap_apr_pool_data(POOL_ADDRESS)
 fee_usd_24h = pool_data["feeUSD24h"]
 apr_24h = apr_pool_data["apr24h"]
 apr_7d = apr_pool_data["apr7d"]
@@ -364,7 +354,7 @@ print(f"Action: {action}")
 print(f"Transaction Hash: {tx_hash_mint}")
 for tx in mint_transactions:
     # print(f"Transaction Hash: {tx['transaction_hash']}")
-    print(f"Token Contract: {tx['token_contract']}, Token Name: {get_name_contract_address(pool_address, tx['token_contract'])}")
+    print(f"Token Contract: {tx['token_contract']}, Token Name: {get_name_contract_address(POOL_ADDRESS, tx['token_contract'])}")
     # print(f"From: {tx['from_address']}")
     # print(f"To: {tx['to_address']}")
     if(tx['token_contract'] == token0.lower()):
